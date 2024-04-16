@@ -70,7 +70,7 @@ import qualified Data.Aeson                       as A (Encoding, FromJSON (..),
                                                         ToJSON (..), Value (..),
                                                         ToJSON1(..), FromJSON1(..),
                                                         ToJSONKey(..),
-                                                        decode, eitherDecode, json,
+                                                        decode, eitherDecode,
                                                         (.!=))
 import qualified Data.Aeson.Encoding              as E
 import qualified Data.Aeson.Encoding.Internal     as E
@@ -79,8 +79,9 @@ import qualified Data.Aeson.Internal              as A (formatError, iparse)
 #endif
 #if MIN_VERSION_aeson(2,0,0)
 import qualified Data.Aeson.Key                   as A
+import qualified Data.Aeson.KeyMap as A
 #endif
-import qualified Data.Aeson.Parser                as A (eitherDecodeWith)
+import qualified Data.Aeson.Parser                as A (eitherDecodeWith, json)
 import qualified Data.Aeson.Types                 as A (Object, Pair, Parser,
                                                         Series,
                                                         explicitParseField,
@@ -588,11 +589,39 @@ instance A.ToJSONKey (Proto3.Suite.Types.String TS.ShortText) where
 #endif
 
 instance (A.ToJSONKey k, ToJSONPB k, ToJSONPB v) => ToJSONPB (M.Map k v) where
+#if MIN_VERSION_aeson(2,1,0)
+  toJSONPB m opts = A.liftToJSON @(M.Map k) (const False) (`toJSONPB` opts) (A.Array . V.fromList . map (`toJSONPB` opts)) m
+  toEncodingPB m opts = A.liftToEncoding @(M.Map k) (const False) (`toEncodingPB` opts) (E.list (`toEncodingPB` opts)) m
+#else
   toJSONPB m opts = A.liftToJSON @(M.Map k) (`toJSONPB` opts) (A.Array . V.fromList . map (`toJSONPB` opts)) m
   toEncodingPB m opts = A.liftToEncoding @(M.Map k) (`toEncodingPB` opts) (E.list (`toEncodingPB` opts)) m
+#endif
 
 instance (Ord k, A.FromJSONKey k, FromJSONPB k, FromJSONPB v) => FromJSONPB (M.Map k v) where
+#if MIN_VERSION_aeson(2,1,0)
+  parseJSONPB = A.liftParseJSON @(M.Map k) Nothing parseJSONPB parseList
+#else
   parseJSONPB = A.liftParseJSON @(M.Map k) parseJSONPB parseList
+#endif
+    where
+      parseList (A.Array a) = traverse parseJSONPB (V.toList a)
+      parseList v = A.typeMismatch "not a list" v
+
+instance (ToJSONPB v) => ToJSONPB (A.KeyMap v) where
+#if MIN_VERSION_aeson(2,1,0)
+  toJSONPB m opts = A.liftToJSON (const False) (`toJSONPB` opts) (A.Array . V.fromList . map (`toJSONPB` opts)) m
+  toEncodingPB m opts = A.liftToEncoding (const False) (`toEncodingPB` opts) (E.list (`toEncodingPB` opts)) m
+#else
+  toJSONPB m opts = A.liftToJSON (`toJSONPB` opts) (A.Array . V.fromList . map (`toJSONPB` opts)) m
+  toEncodingPB m opts = A.liftToEncoding (`toEncodingPB` opts) (E.list (`toEncodingPB` opts)) m
+#endif
+
+instance (FromJSONPB v) => FromJSONPB (A.KeyMap v) where
+#if MIN_VERSION_aeson(2,1,0)
+  parseJSONPB = A.liftParseJSON Nothing parseJSONPB parseList
+#else
+  parseJSONPB = A.liftParseJSON parseJSONPB parseList
+#endif
     where
       parseList (A.Array a) = traverse parseJSONPB (V.toList a)
       parseList v = A.typeMismatch "not a list" v
